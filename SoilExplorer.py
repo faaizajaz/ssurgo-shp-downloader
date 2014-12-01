@@ -5,7 +5,7 @@
 from math import cos, radians
 from bs4 import BeautifulSoup
 from mechanize import Browser
-import threading, Queue
+import threading
 import arcpy
 
 #CLASSES#############################################
@@ -81,7 +81,7 @@ class AreaOfInterest:
 				cellsPerThread = len(self.areaList) - threadCount # cells per thread = (total cells - already assigned)
 				max = min + cellsPerThread #assign max
 			# Create a new thread, append to list
-			t = threading.Thread(target=self.AddDataToCells_multi, args=(min, max, numThreads))
+			t = threading.Thread(target=self.AddDataToCells_multi, args=(min, max))
 			threads.append(t)
 		# Start all threads
 		for i2 in range(numThreads):
@@ -91,7 +91,7 @@ class AreaOfInterest:
 			threads[i3].join()
 
 	# This method makes the API call and adds data to the current Cell
-	def AddDataToCells_multi(self, min, max, numThreads):
+	def AddDataToCells_multi(self, min, max):
 		# Make base URL and mechanize browser
 		baseUrl = "http://casoilresource.lawr.ucdavis.edu/soil_web/reflector_api/soils.php?what=mapunit&bbox="
 		browser = Browser()
@@ -106,6 +106,7 @@ class AreaOfInterest:
 			temp = soilTable.select(".record")[0]
 			cellResult = str(temp.text)
 			self.areaList[i].SetSoilProperties(cellResult)
+			print "Written to cell"
 
 	# This method creates polygons out of each Cell and creates/populates the SOILTYPE field
 	def MakeFeatureClass(self):
@@ -194,8 +195,7 @@ class Cell:
 		self.soilType = splitProps[0]
 		return
 
-#I HATE THESE FUNCTIONS##############################
-
+#TOOLS##############################
 # This function converts the dimensions of an AOI into approx distance in meters
 def ConvertToEucDist(AOI, midLat):
 	lonConvFactor = (111.20 * (cos(radians(midLat))))
