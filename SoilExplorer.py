@@ -5,9 +5,8 @@
 from math import cos, radians
 from bs4 import BeautifulSoup
 from mechanize import Browser
-from os import getcwd
 import threading, Queue
-#import arcpy
+import arcpy
 
 #CLASSES#############################################
 
@@ -63,65 +62,40 @@ class AreaOfInterest:
 			print "Already divided (hasDivided == true)"
 			return None
 
-	#TODO add some args for querying functions to do diff types of queries
-	# Umbrella method for pulling data from SoilWeb and storing it as attribute of corresponding cell
-	def MakeSoilData(self):
-		self.AddDataToCells()
-
-
-	# This method iterates through all Cells in areaList and sets its soilType att to its SSURGO soiltype
-	def AddDataToCells(self):
-		# Make base URL for SoilWeb API
-		baseUrl = "http://casoilresource.lawr.ucdavis.edu/soil_web/reflector_api/soils.php?what=mapunit&bbox="
-		# Iterate through Cells in AOI
-		for cell in self.areaList:
-			# Make query URL for current Cell
-			madeUrl = baseUrl + str(cell.lon1) + "," + str(cell.lat1) + ","+ str(cell.lon2) + "," + str(cell.lat2)
-			# Set current cell soil type to SSURGO soiltype
-			cell.SetSoilProperties(self.GetCellData(madeUrl)) #can set diff types of attributes for Cell here
-			# Print confirmation for Cell
-			print "Data written to cell"
-
-
-	# This method actually pulls and parses data from SoilWeb
-	def GetCellData(self, madeUrl):
-		#TODO catch exception for mechanize LinkNotFoundError()
-		#TODO add multithreading for API calls & Cell attr write (currently ~ 1s per call + write sequence)
-		# Create a mechanize Browser instance, open the madeUrl, follow first link, and store response
-		madeUrl = madeUrl
-		browser = Browser()
-		browser.open(madeUrl)
-		response = browser.follow_link(nr=0)
-		responseData = response.get_data()
-		# Create a BeautifulSoup instance with response, pick first <...="record"> from second <table>
-		bs = BeautifulSoup(responseData)
-		soilTable = bs.findAll('table')[1]
-		temp = soilTable.select(".record")[0]
-		# Store result, get only text, and cast to string. Then return result.
-		result = str(temp.text)
-		return result
-
+	# MULTI-THREADED METHODS FOR GETTING SOIL DATA
+	# This method allows User to get soil data for AOI and specify number of threads
 	def MakeSoilData_multi(self, numThreads):
-
-		recPerThread = (len(self.areaList) / numThreads) + 1
-		threads = []
+		threadCount = 0 # Keeps count of how many Cells have been assigned to threads
+		threads = [] # list for holding threads
 		for i in range(numThreads):
-			# create thread to get cell data for cells[i*recPerThread]:[(i*recPerThread) + recPerThread]
-			# start thread (single function)
-			min = i * recPerThread
-			max = min + recPerThread
+			# If the current Cell block is any EXCEPT the LAST one
+			if i < (numThreads - 1):
+				cellsPerThread = len(self.areaList) / numThreads # Cells per thread is simple division
+				threadCount += cellsPerThread # increment count of assigned Cells
+				# Set min and max (indexes) for current thread
+				min = i * cellsPerThread
+				max = min + cellsPerThread
+			# If the current Cell block is the LAST one
+			elif i == (numThreads - 1):
+				min = i * cellsPerThread # min index assigned as usual
+				cellsPerThread = len(self.areaList) - threadCount # cells per thread = (total cells - already assigned)
+				max = min + cellsPerThread #assign max
+			# Create a new thread, append to list
 			t = threading.Thread(target=self.AddDataToCells_multi, args=(min, max, numThreads))
 			threads.append(t)
-
-
+		# Start all threads
 		for i2 in range(numThreads):
 			threads[i2].start()
+		# Wait for all threads to complete
+		for i3 in range(numThreads):
+			threads[i3].join()
 
-
-
+	# This method makes the API call and adds data to the current Cell
 	def AddDataToCells_multi(self, min, max, numThreads):
+		# Make base URL and mechanize browser
 		baseUrl = "http://casoilresource.lawr.ucdavis.edu/soil_web/reflector_api/soils.php?what=mapunit&bbox="
 		browser = Browser()
+		# Iterate through the assigned block of Cells, make API call, store in Cell attributes
 		for i in range(min, max):
 			madeUrl = baseUrl + str(self.areaList[i].lon1) + "," + str(self.areaList[i].lat1) + ","+ str(self.areaList[i].lon2) + "," + str(self.areaList[i].lat2)
 			browser.open(madeUrl)
@@ -131,15 +105,7 @@ class AreaOfInterest:
 			soilTable = bs.findAll('table')[1]
 			temp = soilTable.select(".record")[0]
 			cellResult = str(temp.text)
-
-
 			self.areaList[i].SetSoilProperties(cellResult)
-			print "Multi written to cell" + str(i)
-			print (self.areaList[i].lon1, self.areaList[i].soilType)
-
-
-
-
 
 	# This method creates polygons out of each Cell and creates/populates the SOILTYPE field
 	def MakeFeatureClass(self):
@@ -176,6 +142,41 @@ class AreaOfInterest:
 		del cursor
 		del row
 		del i
+
+	# SINGLE-THREADED METHODS FOR GETTING SOIL DATA - ****DEPRECATED****
+	# Umbrella method for pulling data from SoilWeb and storing it as attribute of corresponding cell
+	def MakeSoilData(self):
+		self.AddDataToCells()
+
+	# This method iterates through all Cells in areaList and sets its soilType att to its SSURGO soiltype
+	def AddDataToCells(self):
+		# Make base URL for SoilWeb API
+		baseUrl = "http://casoilresource.lawr.ucdavis.edu/soil_web/reflector_api/soils.php?what=mapunit&bbox="
+		# Iterate through Cells in AOI
+		for cell in self.areaList:
+			# Make query URL for current Cell
+			madeUrl = baseUrl + str(cell.lon1) + "," + str(cell.lat1) + ","+ str(cell.lon2) + "," + str(cell.lat2)
+			# Set current cell soil type to SSURGO soiltype
+			cell.SetSoilProperties(self.GetCellData(madeUrl)) #can set diff types of attributes for Cell here
+			# Print confirmation for Cell
+			print "Data written to cell"
+
+	# This method actually pulls and parses data from SoilWeb
+	def GetCellData(self, madeUrl):
+		#TODO catch exception for mechanize LinkNotFoundError()
+		# Create a mechanize Browser instance, open the madeUrl, follow first link, and store response
+		madeUrl = madeUrl
+		browser = Browser()
+		browser.open(madeUrl)
+		response = browser.follow_link(nr=0)
+		responseData = response.get_data()
+		# Create a BeautifulSoup instance with response, pick first <...="record"> from second <table>
+		bs = BeautifulSoup(responseData)
+		soilTable = bs.findAll('table')[1]
+		temp = soilTable.select(".record")[0]
+		# Store result, get only text, and cast to string. Then return result.
+		result = str(temp.text)
+		return result
 
 class Cell:
 	# Constructor takes two (lon,lat) pairs as bounding box
