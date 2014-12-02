@@ -5,7 +5,7 @@
 from math import cos, radians
 from bs4 import BeautifulSoup
 from mechanize import Browser
-import threading#, arcpy
+import threading, arcpy
 
 class AreaOfInterest:
 	#Constructor takes two (lon,lat) pairs that make up AOI bounding box and resolution (meters)
