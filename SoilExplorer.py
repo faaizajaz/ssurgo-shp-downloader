@@ -5,10 +5,7 @@
 from math import cos, radians
 from bs4 import BeautifulSoup
 from mechanize import Browser
-import threading
-import arcpy
-
-#CLASSES#############################################
+import threading#, arcpy
 
 class AreaOfInterest:
 	#Constructor takes two (lon,lat) pairs that make up AOI bounding box and resolution (meters)
@@ -19,14 +16,14 @@ class AreaOfInterest:
 		self.lon2 = lon2
 		self.lat2 = lat2
 		self.res = res
-
 		# Set anchor point for AOI (choose lowest of each lon and lat)
-		self.anchorLon = (self.lon1, self.lon2)[self.lon1 > self.lon2]
-		self.anchorLat = (self.lat1, self.lat2)[self.lat1 > self.lat2]
+		self.anchorLon = self.lon2 if self.lon1 > self.lon2 else self.lon1
+		self.anchorLat = self.lat2 if self.lat1 > self.lat2 else self.lat1
 		# Flag to prevent dividing an AOI twice. Set to True after Divide() method called
 		self.hasDivided = False
 		# Create list to store Cells
 		self.areaList = []
+		self.Divide()
 
 	# This method divides the AOI into Cell objects based on the resolution specified in AOI constructor
 	def Divide(self):
@@ -62,12 +59,12 @@ class AreaOfInterest:
 			print "Already divided (hasDivided == true)"
 			return None
 
-	# MULTI-THREADED METHODS FOR GETTING SOIL DATA
-	# This method allows User to get soil data for AOI and specify number of threads
+	# This method allows User to get soil data for AOI and specify number of threads for API calls
 	def MakeSoilData_multi(self, numThreads):
 		threadCount = 0 # Keeps count of how many Cells have been assigned to threads
 		threads = [] # list for holding threads
 		for i in range(numThreads):
+			#TODO Try and improve this algo to avoid the extra n records on the last Cell block
 			# If the current Cell block is any EXCEPT the LAST one
 			if i < (numThreads - 1):
 				cellsPerThread = len(self.areaList) / numThreads # Cells per thread is simple division
@@ -144,41 +141,6 @@ class AreaOfInterest:
 		del row
 		del i
 
-	# SINGLE-THREADED METHODS FOR GETTING SOIL DATA - ****DEPRECATED****
-	# Umbrella method for pulling data from SoilWeb and storing it as attribute of corresponding cell
-	def MakeSoilData(self):
-		self.AddDataToCells()
-
-	# This method iterates through all Cells in areaList and sets its soilType att to its SSURGO soiltype
-	def AddDataToCells(self):
-		# Make base URL for SoilWeb API
-		baseUrl = "http://casoilresource.lawr.ucdavis.edu/soil_web/reflector_api/soils.php?what=mapunit&bbox="
-		# Iterate through Cells in AOI
-		for cell in self.areaList:
-			# Make query URL for current Cell
-			madeUrl = baseUrl + str(cell.lon1) + "," + str(cell.lat1) + ","+ str(cell.lon2) + "," + str(cell.lat2)
-			# Set current cell soil type to SSURGO soiltype
-			cell.SetSoilProperties(self.GetCellData(madeUrl)) #can set diff types of attributes for Cell here
-			# Print confirmation for Cell
-			print "Data written to cell"
-
-	# This method actually pulls and parses data from SoilWeb
-	def GetCellData(self, madeUrl):
-		#TODO catch exception for mechanize LinkNotFoundError()
-		# Create a mechanize Browser instance, open the madeUrl, follow first link, and store response
-		madeUrl = madeUrl
-		browser = Browser()
-		browser.open(madeUrl)
-		response = browser.follow_link(nr=0)
-		responseData = response.get_data()
-		# Create a BeautifulSoup instance with response, pick first <...="record"> from second <table>
-		bs = BeautifulSoup(responseData)
-		soilTable = bs.findAll('table')[1]
-		temp = soilTable.select(".record")[0]
-		# Store result, get only text, and cast to string. Then return result.
-		result = str(temp.text)
-		return result
-
 class Cell:
 	# Constructor takes two (lon,lat) pairs as bounding box
 	def __init__(self, lon1, lat1, lon2, lat2):
@@ -195,7 +157,8 @@ class Cell:
 		self.soilType = splitProps[0]
 		return
 
-#TOOLS##############################
+# Conversions
+
 # This function converts the dimensions of an AOI into approx distance in meters
 def ConvertToEucDist(AOI, midLat):
 	lonConvFactor = (111.20 * (cos(radians(midLat))))
@@ -217,5 +180,5 @@ def ConvertToDegs(dist, key, midLat):
 		return degs
 	else:
 		print "Couldn't call SoilExplorer.ConvertToDegs"
-		return
+		return None
 
