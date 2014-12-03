@@ -4,8 +4,9 @@
 
 from math import cos, radians
 from bs4 import BeautifulSoup
-from mechanize import Browser
+from mechanize import Browser, URLError
 import threading, arcpy
+import time
 
 class AreaOfInterest:
 	#Constructor takes two (lon,lat) pairs that make up AOI bounding box and resolution (meters)
@@ -24,9 +25,12 @@ class AreaOfInterest:
 		# Create list to store Cells
 		self.areaList = []
 		self.Divide()
+		self.numErrorCells = 0
 
 	# This method divides the AOI into Cell objects based on the resolution specified in AOI constructor
 	def Divide(self):
+		print "Dividing..."
+		div_start = time.time()
 		midLat = ((abs(self.lat1) + abs(self.lat2)) / 2.0)
 		# Check AOI hasDivided flag
 		if self.hasDivided == False:
@@ -52,6 +56,8 @@ class AreaOfInterest:
 				currLat += ConvertToDegs(self.res, "la", midLat)
 			# Test message to confirm division
 			print "Division successful"
+			div_time = time.time() - div_start
+			print str(div_time) + " seconds"
 			return None
 		# TODO Catch an exception here
 		# If already divided, give an error message
@@ -61,10 +67,13 @@ class AreaOfInterest:
 
 	# This method allows User to get soil data for AOI and specify number of threads for API calls
 	def MakeSoilData_multi(self, numThreads):
+		print "Getting soil data..."
+		soil_start = time.time()
+
 		threadCount = 0 # Keeps count of how many Cells have been assigned to threads
 		threads = [] # list for holding threads
 		for i in range(numThreads):
-			#TODO Try and improve this algo to avoid the extra n records on the last Cell block
+			#TODO improve to avoid extra n records on the last Cell block
 			# If the current Cell block is any EXCEPT the LAST one
 			if i < (numThreads - 1):
 				cellsPerThread = len(self.areaList) / numThreads # Cells per thread is simple division
@@ -87,26 +96,40 @@ class AreaOfInterest:
 		for i3 in range(numThreads):
 			threads[i3].join()
 
+		print "Cell data retrieved."
+		soil_time = (time.time() - soil_start) / 60
+		print str(soil_time) + " minutes."
+
 	# This method makes the API call and adds data to the current Cell
 	def AddDataToCells_multi(self, min, max):
 		# Make base URL and mechanize browser
 		baseUrl = "http://casoilresource.lawr.ucdavis.edu/soil_web/reflector_api/soils.php?what=mapunit&bbox="
 		browser = Browser()
 		# Iterate through the assigned block of Cells, make API call, store in Cell attributes
+
 		for i in range(min, max):
-			madeUrl = baseUrl + str(self.areaList[i].lon1) + "," + str(self.areaList[i].lat1) + ","+ str(self.areaList[i].lon2) + "," + str(self.areaList[i].lat2)
-			browser.open(madeUrl)
-			response = browser.follow_link(nr=0)
-			responseData = response.get_data()
-			bs = BeautifulSoup(responseData)
-			soilTable = bs.findAll('table')[1]
-			temp = soilTable.select(".record")[0]
-			cellResult = str(temp.text)
-			self.areaList[i].SetSoilProperties(cellResult)
-			print "Written to cell"
+			try:
+				madeUrl = baseUrl + str(self.areaList[i].lon1) + "," + str(self.areaList[i].lat1) + ","+ str(self.areaList[i].lon2) + "," + str(self.areaList[i].lat2)
+				browser.open(madeUrl)
+				response = browser.follow_link(nr=0)
+				responseData = response.get_data()
+				bs = BeautifulSoup(responseData)
+				soilTable = bs.findAll('table')[1]
+				temp = soilTable.select(".record")[0]
+				cellResult = str(temp.text)
+				self.areaList[i].SetSoilProperties(cellResult)
+			except URLError:
+				self.areaList[i].SetSoilProperties("ERR_URL")
+				self.numErrorCells += 1
+
+
 
 	# This method creates polygons out of each Cell and creates/populates the SOILTYPE field
 	def MakeFeatureClass(self):
+		print "Building shapefile..."
+		arc_start = time.time()
+
+
 		spatial_ref = "NAD 1983"
 		# Arcpy housekeeping
 		arcpy.env.workspace = "D:/Faaiz/PythonProjects/SSURGO-GIS-Downloader"
@@ -125,13 +148,17 @@ class AreaOfInterest:
 			cellPolygon = arcpy.Polygon(pointArray, spatial_ref)
 			# Add current polygon to final result FC
 			arcpy.Append_management(cellPolygon, "/Results/SoilCells.shp", "NO_TEST")
-			# Print confirmation message for each Cell
-			print "Polygon added to Results FC"
+		print "Done building shapefile."
+		arc_time = (time.time() - arc_start) / 60 / 60
+		print str(arc_time) + " hours"
 		# Create update cursor for SOILTYPE field
 		cursor = arcpy.da.UpdateCursor("/Results/SoilCells.shp", ['SOILTYPE'])
 		# Create index variables for populating SOILTYPE field
 		i = 0
 		# Iterate through returned results, and update SOILTYPE to corresponding Cells soilType using index (i)
+		print "Populating SOILTYPE field..."
+		pop_start = time.time()
+
 		for row in cursor:
 			row[0] = self.areaList[i].soilType
 			cursor.updateRow(row)
@@ -140,6 +167,11 @@ class AreaOfInterest:
 		del cursor
 		del row
 		del i
+		print "Done populating"
+		pop_time = (time.time() - pop_start) / 60
+		print str(pop_time) + " minutes to populate"
+
+
 
 class Cell:
 	# Constructor takes two (lon,lat) pairs as bounding box
