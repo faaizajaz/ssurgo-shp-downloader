@@ -4,14 +4,15 @@ SSURGO-GIS-Downloader
 A Python tool to download SSURGO data from the UC Davis Soil Web API
 
 =====================
-DEPENDENCIES
+Dependencies
 =====================
+```
 mechanize
 BeautifulSoup
 arcpy
-
+```
 =====================
-HOW TO USE
+How to use
 =====================
 
 1) Instantiate AOI:
