@@ -1,16 +1,16 @@
-SSURGO-GIS-Downloader
+# SSURGO-GIS-Downloader
 
 
 A Python tool to download SSURGO data from the UC Davis Soil Web API
 
-===Dependencies===
+## Dependencies
 
 ```
 mechanize
 BeautifulSoup
 arcpy
 ```
-===How to use===
+## How to use
 
 
 1) Instantiate AOI:
@@ -30,7 +30,7 @@ arcpy
   a.MakeFeatureClass()
 ```  
 
-===Sample test script===
+## Sample test script===
 
 ```
 from SoilExplorer import AreaOfInterest
